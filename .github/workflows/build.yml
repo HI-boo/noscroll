@@ -1,0 +1,49 @@
+name: Build NoScroll IPA
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node dependencies if needed
+        run: |
+          if [ -f "package.json" ]; then
+            npm install --legacy-peer-deps || true
+          fi
+
+      - name: Install CocoaPods if needed
+        run: |
+          PODFILE=$(find . -maxdepth 3 -name "Podfile" | head -n 1)
+          if [ -n "$PODFILE" ]; then
+            POD_DIR=$(dirname "$PODFILE")
+            if [ ! -d "$POD_DIR/Pods" ]; then
+              (cd "$POD_DIR" && pod install)
+            fi
+          fi
+
+      - name: Build unsigned app
+        run: |
+          WORK_PATH=$(find . -maxdepth 3 -name "*.xcworkspace" ! -path "*/project.xcworkspace/*" | head -n 1)
+          if [ -n "$WORK_PATH" ]; then
+            SCHEME=$(xcodebuild -workspace "$WORK_PATH" -list -json | python3 -c "import sys, json; schemes=[s for s in json.load(sys.stdin)['workspace']['schemes'] if 'Test' not in s and 'Pods' not in s]; print(schemes[0])")
+            xcodebuild -workspace "$WORK_PATH" -scheme "$SCHEME" -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          else
+            PROJ_PATH=$(find . -maxdepth 3 -name "*.xcodeproj" | head -n 1)
+            SCHEME=$(xcodebuild -project "$PROJ_PATH" -list -json | python3 -c "import sys, json; schemes=[s for s in json.load(sys.stdin)['project']['schemes'] if 'Test' not in s]; print(schemes[0])")
+            xcodebuild -project "$PROJ_PATH" -scheme "$SCHEME" -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          fi
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          cp -r "$APP_PATH" Payload/
+          zip -r NoScroll.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: NoScroll-IPA
+          path: NoScroll.ipa

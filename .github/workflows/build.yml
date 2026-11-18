@@ -7,10 +7,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Node dependencies if needed
+      - name: Setup Node and build assets
         run: |
           if [ -f "package.json" ]; then
-            npm install --legacy-peer-deps || true
+            npm install --legacy-peer-deps
+            npm run build --if-present
+            npx cap sync ios || true
           fi
 
       - name: Install CocoaPods if needed
@@ -18,9 +20,7 @@ jobs:
           PODFILE=$(find . -maxdepth 3 -name "Podfile" | head -n 1)
           if [ -n "$PODFILE" ]; then
             POD_DIR=$(dirname "$PODFILE")
-            if [ ! -d "$POD_DIR/Pods" ]; then
-              (cd "$POD_DIR" && pod install)
-            fi
+            (cd "$POD_DIR" && pod install --repo-update)
           fi
 
       - name: Build unsigned app
@@ -28,11 +28,11 @@ jobs:
           WORK_PATH=$(find . -maxdepth 3 -name "*.xcworkspace" ! -path "*/project.xcworkspace/*" | head -n 1)
           if [ -n "$WORK_PATH" ]; then
             SCHEME=$(xcodebuild -workspace "$WORK_PATH" -list -json | python3 -c "import sys, json; schemes=[s for s in json.load(sys.stdin)['workspace']['schemes'] if 'Test' not in s and 'Pods' not in s]; print(schemes[0])")
-            xcodebuild -workspace "$WORK_PATH" -scheme "$SCHEME" -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+            xcodebuild -workspace "$WORK_PATH" -scheme "$SCHEME" -configuration Release -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM=""
           else
             PROJ_PATH=$(find . -maxdepth 3 -name "*.xcodeproj" | head -n 1)
             SCHEME=$(xcodebuild -project "$PROJ_PATH" -list -json | python3 -c "import sys, json; schemes=[s for s in json.load(sys.stdin)['project']['schemes'] if 'Test' not in s]; print(schemes[0])")
-            xcodebuild -project "$PROJ_PATH" -scheme "$SCHEME" -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+            xcodebuild -project "$PROJ_PATH" -scheme "$SCHEME" -configuration Release -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM=""
           fi
 
       - name: Package IPA
